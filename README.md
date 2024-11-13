@@ -31,7 +31,7 @@ Consulte o meu perfil <a href="https://github.com/alexandervsilva/alexandervsilv
 
 ## Descrição
 
-- Descreva seu projeto aqui
+- Exemplos de uso de OpenTelemetry + Grafana + Tempo + Loki com .NET 8 + ASP.NET Core em APIs REST. Estas aplicações demonstram também a implementação de distributed tracing com o Grafana Tempo e logging com o Grafana Loki, utilizando ainda SQL Server, PostgreSQL e MySQL.
 
 ## Lista de comandos úteis do GIT
 
