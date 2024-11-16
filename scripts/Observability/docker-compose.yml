@@ -1,0 +1,159 @@
+version: '3.8'
+
+services:
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    volumes:
+      - ./otel-collector/otel-config.yaml:/etc/otel/config.yaml
+      - ./log:/log/otel
+    command: --config /etc/otel/config.yaml
+    environment:
+      LOKI_ENDPOINT: "http://loki:3100/loki/api/v1/push"
+      JAEGER_ENDPOINT: "jaeger:14250"
+      ZIPKIN_ENDPOINT: "http://zipkin:9411/api/v2/spans"
+      PROMETHEUS_ENDPOINT: "0.0.0.0:8889"
+      #ASPECTO_ENDPOINT: "otelcol.aspecto.io:4317"
+      #ASPECTO_APIKEY: "f2c20255e3a13538fc725d656c4cd87f"      
+      AZ_INSTRUMENTATION_KEY: "8e062472-20ce-4157-b6fb-f9d8266733c1"
+      DATADOG_KEY: "135f3059733d09a4cdc5eac08ca3a236"
+      DATADOG_SITE: "datadoghq.com"
+      DYNATRACE_ENDPOINT: "https://dun30294.live.dynatrace.com/api/v2/otlp"
+      DYNATRACE_TOKEN: "Api-Token dt0c01.WWXHTUKFSNHXGLIWMW4RB6HK.AVDVHOW7M7J4FAE2MGS7C5M3ONFUFY37PZ5JNZAM5UKC2N473T7F45FOH7IQNDEB"
+    ports:
+      - "8889:8889"   # Prometheus metrics exporter (scrape endpoint)
+      - "13133:13133" # health_check extension
+      - "55679:55679" # ZPages extension
+    # - "4318:4318"   # OTLP Receiver protocol HTTP
+    # - "4317:4317"   # OTLP Receiver protocol gRPC      
+    depends_on:
+      - jaeger
+      - prometheus
+      - loki
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"      
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "5775:5775"   # accept zipkin.thrift over compact thrift protocol
+      - "6831:6831"   # accept jaeger.thrift over compact thrift protocol
+      - "6832:6832"   # accept jaeger.thrift over binary thrift protocol
+      - "5778:5778"   # serve configs
+      - "14268:14268" # accept jaeger.thrift directly from clients
+      - "14250:14250" # OTLP exporter protocol gRPC
+
+  prometheus:
+    image: prom/prometheus:latest   
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+  
+  promtail:
+    image:  grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./promtail/promtail.yaml:/etc/promtail/docker-config.yaml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/docker-config.yaml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./grafana/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    environment:
+      GF_PATHS_PROVISIONING: "/etc/grafana/provisioning"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"      
+    ports:
+      - "3000:3000"
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+
+  # Tempo runs as user 10001, and docker compose creates the volume as root.
+  # As such, we need to chown the volume in order for Tempo to start correctly.
+  init:
+    image: &tempoImage grafana/tempo:latest
+    user: root
+    entrypoint:
+      - "chown"
+      - "10001:10001"
+      - "/var/tempo"
+    volumes:
+      - ../tempo-data:/var/tempo
+
+  tempo:
+    image: *tempoImage
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml
+      - ../tempo-data:/var/tempo
+    ports:
+      #- "14268"      # jaeger ingest
+      - "3200:3200"  # tempo
+      - "4317:4317"  # otlp grpc
+      - "4318:4318"  # otlp http
+      #- "9411"       # zipkin
+    depends_on:
+      - init
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=sa
+      - POSTGRES_PASSWORD=Admin@123
+      - POSTGRES_DB=BaseContagem
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  
+  mysql:
+    image: mysql:latest
+    container_name: mysql-server
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=Admin123
+      - MYSQL_DATABASE=BaseContagem
+      - MYSQL_USER=sa
+      - MYSQL_PASSWORD=Admin123
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  mssqlserver:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: mssqlserver
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Admin@123
+      - MSSQL_COLLATION=SQL_Latin1_General_CP1_CI_AS
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+volumes:
+  postgres_data:
+    driver: local
+  mssql_data:
+    driver: local
+  mysql_data:
+    driver: local   
